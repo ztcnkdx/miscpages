@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text to Canvas QTI Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root { --primary: #008EE2; --bg: #f5f5f5; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); padding: 2rem; color: #333; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { margin-top: 0; color: #2D3B45; }
+        
+        .section { margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #eee; }
+        .section:last-child { border-bottom: none; }
+        
+        label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
+        input[type="text"], input[type="number"], input[type="datetime-local"], textarea { width: 100%; padding: 0.8rem; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-family: monospace; }
+        textarea { height: 300px; resize: vertical; }
+        
+        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+        .checkbox-group { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+        .checkbox-group label { margin: 0; font-weight: normal; }
+        .checkbox-group input { width: auto; }
+
+        button { background: var(--primary); color: white; border: none; padding: 1rem 2rem; font-size: 1rem; border-radius: 4px; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: #0076bd; }
+        
+        details { background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; }
+        summary { cursor: pointer; font-weight: 600; color: var(--primary); }
+        
+        .error { color: #cc0000; background: #ffe6e6; padding: 1rem; border-radius: 4px; margin-top: 1rem; display: none; }
+        .success { color: #006600; background: #e6ffe6; padding: 1rem; border-radius: 4px; margin-top: 1rem; display: none; }
+        
+        .helper-text { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Text to Canvas QTI Converter</h1>
+    
+    <div class="section">
+        <label>1. Quiz Content (Text)</label>
+        <p class="helper-text">Paste your questions below or <input type="file" id="fileUpload" accept=".txt" style="display:inline; width:auto;"> to load a file.</p>
+        <textarea id="inputText" placeholder="1. What is 2+3?&#10;a) 1&#10;*b) 5&#10;&#10;2. Select dinosaurs:&#10;[*] T-Rex&#10;[ ] Lion"></textarea>
+    </div>
+
+    <div class="section">
+        <details>
+            <summary>2. Quiz Settings (Optional - Click to Expand)</summary>
+            <div class="settings-grid">
+                <div>
+                    <label>Quiz Title</label>
+                    <input type="text" id="quizTitle" value="Generated Quiz">
+                </div>
+                <div>
+                    <label>Points per Question</label>
+                    <input type="number" id="pointsPerQuestion" value="1" step="0.1">
+                </div>
+                <div>
+                    <label>Due Date</label>
+                    <input type="datetime-local" id="dueDate">
+                </div>
+                <div>
+                    <label>Unlock At</label>
+                    <input type="datetime-local" id="unlockDate">
+                </div>
+                <div>
+                    <label>Lock At</label>
+                    <input type="datetime-local" id="lockDate">
+                </div>
+                <div>
+                    <label>Time Limit (Minutes)</label>
+                    <input type="number" id="timeLimit" placeholder="0 for unlimited">
+                </div>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="shuffleAnswers" checked>
+                <label for="shuffleAnswers">Shuffle Answers</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="allowedAttempts">
+                <label for="allowedAttempts">Unlimited Attempts (Uncheck for 1 attempt)</label>
+            </div>
+        </details>
+    </div>
+
+    <button onclick="generateQuiz()">Convert & Download QTI Zip</button>
+    
+    <div id="errorBox" class="error"></div>
+    <div id="successBox" class="success"></div>
+</div>
+
+<script>
+    // --- Utils ---
+    const generateUUID = () => {
+        return 'g' + 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    };
+
+    const escapeHTML = (str) => {
+        return str.replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;')
+                  .replace(/'/g, '&apos;');
+    };
+
+    // --- File Reader ---
+    document.getElementById('fileUpload').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('inputText').value = e.target.result;
+        };
+        reader.readAsText(file);
+    });
+
+    // --- Parsing Logic ---
+    function parseQuestions(text) {
+        // Normalize line endings and split by double newlines
+        const blocks = text.replace(/\r\n/g, '\n').split(/\n\s*\n/);
+        const questions = [];
+
+        blocks.forEach((block, index) => {
+            const lines = block.trim().split('\n');
+            if (lines.length === 0) return;
+
+            // Extract question text (first line usually)
+            // Remove numbering if present "1. "
+            let qText = lines[0].replace(/^\d+[\.\)]\s*/, '').trim();
+            if(!qText) return;
+
+            let question = {
+                id: generateUUID(),
+                title: "Question",
+                text: qText,
+                type: 'unknown',
+                answers: [],
+                points: document.getElementById('pointsPerQuestion').value
+            };
+
+            // Detect type based on subsequent lines
+            const remainingLines = lines.slice(1);
+            
+            // 1. Numerical Check: Look for pattern like "3 (2.9-3.1)"
+            if (remainingLines.length === 1 && /\(\d+(\.\d+)?\s*-\s*\d+(\.\d+)?\)/.test(remainingLines[0])) {
+                question.type = 'numerical_question';
+                const match = remainingLines[0].match(/^(.+?)\s*\((.+?)\s*-\s*(.+?)\)/);
+                if (match) {
+                    question.answers = {
+                        exact: match[1].trim(),
+                        min: match[2].trim(),
+                        max: match[3].trim()
+                    };
+                }
+            }
+            // 2. Multiple Answers Check: Look for [ ] or [*]
+            else if (remainingLines.some(l => /^\[\s*\*?\s*\]/.test(l.trim()))) {
+                question.type = 'multiple_answers_question';
+                remainingLines.forEach(l => {
+                    const isCorrect = /^\[\s*\*\s*\]/.test(l.trim());
+                    const text = l.replace(/^\[\s*\*?\s*\]/, '').trim();
+                    if(text) {
+                        question.answers.push({ id: generateUUID(), text: text, isCorrect: isCorrect });
+                    }
+                });
+            }
+            // 3. Multiple Choice (Default): Look for a) or *a) or just lines
+            else {
+                question.type = 'multiple_choice_question';
+                remainingLines.forEach(l => {
+                    const isCorrect = /^\*/.test(l.trim());
+                    // Remove * and optional a) b) markers
+                    let text = l.replace(/^\*\s*/, '').replace(/^[a-zA-Z][\)\.]\s*/, '').trim();
+                    if(text) {
+                        question.answers.push({ id: generateUUID(), text: text, isCorrect: isCorrect });
+                    }
+                });
+            }
+
+            questions.push(question);
+        });
+
+        return questions;
+    }
+
+    // --- XML Generation ---
+
+    function createManifest(quizId) {
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="${generateUUID()}" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1" xmlns:lom="http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource" xmlns:imsmd="http://www.imsglobal.org/xsd/imsmd_v1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1 http://www.imsglobal.org/xsd/imscp_v1p1.xsd http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource http://www.imsglobal.org/profile/cc/ccv1p1/LOM/ccv1p1_lomresource_v1p0.xsd http://www.imsglobal.org/xsd/imsmd_v1p2 http://www.imsglobal.org/xsd/imsmd_v1p2p2.xsd">
+  <metadata>
+    <schema>IMS Content</schema>
+    <schemaversion>1.1.3</schemaversion>
+    <imsmd:lom>
+      <imsmd:general>
+        <imsmd:title>
+          <imsmd:string>QTI Quiz Export</imsmd:string>
+        </imsmd:title>
+      </imsmd:general>
+    </imsmd:lom>
+  </metadata>
+  <resources>
+    <resource identifier="${quizId}" type="imsqti_xmlv1p2">
+      <file href="${quizId}/${quizId}.xml"/>
+      <dependency identifierref="${quizId}_meta"/>
+    </resource>
+    <resource identifier="${quizId}_meta" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="${quizId}/assessment_meta.xml">
+      <file href="${quizId}/assessment_meta.xml"/>
+    </resource>
+  </resources>
+</manifest>`;
+    }
+
+    function createAssessmentMeta(quizId, settings) {
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<quiz identifier="${quizId}" xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">
+  <title>${escapeHTML(settings.title)}</title>
+  <description></description>
+  <shuffle_answers>${settings.shuffle}</shuffle_answers>
+  <scoring_policy>keep_highest</scoring_policy>
+  <quiz_type>assignment</quiz_type>
+  <points_possible>${settings.totalPoints}</points_possible>
+  <allowed_attempts>${settings.attempts}</allowed_attempts>
+  <time_limit>${settings.timeLimit}</time_limit>
+  ${settings.dueAt ? `<due_at>${settings.dueAt}</due_at>` : ''}
+  ${settings.unlockAt ? `<unlock_at>${settings.unlockAt}</unlock_at>` : ''}
+  ${settings.lockAt ? `<lock_at>${settings.lockAt}</lock_at>` : ''}
+  <assignment identifier="${generateUUID()}">
+    <title>${escapeHTML(settings.title)}</title>
+    <points_possible>${settings.totalPoints}</points_possible>
+    <grading_type>points</grading_type>
+    <submission_types>online_quiz</submission_types>
+    <quiz_identifierref>${quizId}</quiz_identifierref>
+  </assignment>
+</quiz>`;
+    }
+
+    function createAssessmentXML(quizId, questions, settings) {
+        let itemsXML = '';
+
+        questions.forEach(q => {
+            let itemContent = '';
+            let resProcessing = '';
+
+            if (q.type === 'numerical_question') {
+                // Numerical
+                itemContent = `
+                <presentation>
+                  <material><mattext texttype="text/html">&lt;div&gt;${escapeHTML(q.text)}&lt;/div&gt;</mattext></material>
+                  <response_str ident="response1" rcardinality="Single">
+                    <render_fib fibtype="Decimal"><response_label ident="answer1"/></render_fib>
+                  </response_str>
+                </presentation>`;
+                
+                resProcessing = `
+                <resprocessing>
+                  <outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>
+                  <respcondition continue="No">
+                    <conditionvar>
+                      <or>
+                        <varequal respident="response1">${q.answers.exact}</varequal>
+                        <and>
+                          <vargte respident="response1">${q.answers.min}</vargte>
+                          <varlte respident="response1">${q.answers.max}</varlte>
+                        </and>
+                      </or>
+                    </conditionvar>
+                    <setvar action="Set" varname="SCORE">100</setvar>
+                  </respcondition>
+                </resprocessing>`;
+
+            } else {
+                // MCQ or Multiple Answers
+                let rcardinality = q.type === 'multiple_answers_question' ? 'Multiple' : 'Single';
+                let choicesXML = q.answers.map(a => `
+                    <response_label ident="${a.id}">
+                        <material><mattext texttype="text/plain">${escapeHTML(a.text)}</mattext></material>
+                    </response_label>`).join('');
+
+                itemContent = `
+                <presentation>
+                  <material><mattext texttype="text/html">&lt;div&gt;${escapeHTML(q.text)}&lt;/div&gt;</mattext></material>
+                  <response_lid ident="response1" rcardinality="${rcardinality}">
+                    <render_choice>${choicesXML}</render_choice>
+                  </response_lid>
+                </presentation>`;
+
+                // Logic
+                let conditionVar = '';
+                if (q.type === 'multiple_choice_question') {
+                    // Find correct ID
+                    const correctIds = q.answers.filter(a => a.isCorrect).map(a => a.id);
+                    if(correctIds.length > 0) {
+                        conditionVar = `<varequal respident="response1">${correctIds[0]}</varequal>`;
+                    }
+                } else {
+                    // Multiple Answer
+                    const correctIds = q.answers.filter(a => a.isCorrect).map(a => a.id);
+                    const incorrectIds = q.answers.filter(a => !a.isCorrect).map(a => a.id);
+                    
+                    let conditions = [];
+                    correctIds.forEach(id => conditions.push(`<varequal respident="response1">${id}</varequal>`));
+                    incorrectIds.forEach(id => conditions.push(`<not><varequal respident="response1">${id}</varequal></not>`));
+                    
+                    conditionVar = `<and>${conditions.join('')}</and>`;
+                }
+
+                resProcessing = `
+                <resprocessing>
+                  <outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>
+                  <respcondition continue="No">
+                    <conditionvar>${conditionVar}</conditionvar>
+                    <setvar action="Set" varname="SCORE">100</setvar>
+                  </respcondition>
+                </resprocessing>`;
+            }
+
+            itemsXML += `
+            <item ident="${q.id}" title="${q.title}">
+                <itemmetadata>
+                    <qtimetadata>
+                        <qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>${q.type}</fieldentry></qtimetadatafield>
+                        <qtimetadatafield><fieldlabel>points_possible</fieldlabel><fieldentry>${q.points}</fieldentry></qtimetadatafield>
+                    </qtimetadata>
+                </itemmetadata>
+                ${itemContent}
+                ${resProcessing}
+            </item>`;
+        });
+
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
+  <assessment ident="${quizId}" title="${escapeHTML(settings.title)}">
+    <qtimetadata>
+      <qtimetadatafield><fieldlabel>cc_maxattempts</fieldlabel><fieldentry>${settings.attempts}</fieldentry></qtimetadatafield>
+    </qtimetadata>
+    <section ident="root_section">
+        ${itemsXML}
+    </section>
+  </assessment>
+</questestinterop>`;
+    }
+
+    // --- Main Driver ---
+    async function generateQuiz() {
+        const errorBox = document.getElementById('errorBox');
+        const successBox = document.getElementById('successBox');
+        errorBox.style.display = 'none';
+        successBox.style.display = 'none';
+
+        try {
+            const rawText = document.getElementById('inputText').value;
+            if (!rawText.trim()) throw new Error("Please enter question text.");
+
+            const questions = parseQuestions(rawText);
+            if (questions.length === 0) throw new Error("No valid questions found. Check formatting.");
+
+            // Settings
+            const totalPoints = questions.reduce((sum, q) => sum + parseFloat(q.points), 0);
+            const settings = {
+                title: document.getElementById('quizTitle').value || "Generated Quiz",
+                shuffle: document.getElementById('shuffleAnswers').checked.toString(),
+                attempts: document.getElementById('allowedAttempts').checked ? '-1' : '1',
+                timeLimit: document.getElementById('timeLimit').value || '',
+                dueAt: document.getElementById('dueDate').value ? new Date(document.getElementById('dueDate').value).toISOString() : '',
+                unlockAt: document.getElementById('unlockDate').value ? new Date(document.getElementById('unlockDate').value).toISOString() : '',
+                lockAt: document.getElementById('lockDate').value ? new Date(document.getElementById('lockDate').value).toISOString() : '',
+                totalPoints: totalPoints.toFixed(1)
+            };
+
+            const quizId = generateUUID();
+            
+            // Generate XML Strings
+            const manifestXML = createManifest(quizId);
+            const metaXML = createAssessmentMeta(quizId, settings);
+            const assessmentXML = createAssessmentXML(quizId, questions, settings);
+
+            // Create ZIP
+            const zip = new JSZip();
+            zip.file("imsmanifest.xml", manifestXML);
+            const folder = zip.folder(quizId);
+            folder.file(`${quizId}.xml`, assessmentXML);
+            folder.file("assessment_meta.xml", metaXML);
+
+            // Download
+            const content = await zip.generateAsync({type:"blob"});
+            const url = window.URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `canvas-quiz-${settings.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            successBox.textContent = `Success! Generated quiz with ${questions.length} questions.`;
+            successBox.style.display = 'block';
+
+        } catch (e) {
+            errorBox.textContent = e.message;
+            errorBox.style.display = 'block';
+            console.error(e);
+        }
+    }
+</script>
+
+</body>
+</html>
