@@ -1,1 +1,1 @@
-toy newsvendor game online
+vibe coding products of TC Z
