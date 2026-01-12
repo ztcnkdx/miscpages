@@ -45,6 +45,25 @@
         }
         .lang-btn:hover { background: rgba(255,255,255,0.2); }
 
+        /* New Rule Button Style */
+        .rule-btn {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(241, 196, 15, 0.3);
+            border: 1px solid rgba(241, 196, 15, 0.5);
+            color: #f1c40f;
+            padding: 5px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+            width: auto;
+            z-index: 50;
+            font-weight: bold;
+        }
+        .rule-btn:hover { background: rgba(241, 196, 15, 0.5); color: white; }
+
         header { text-align: center; margin-bottom: 10px; margin-top: 20px;}
         header h1 { margin: 0.2em 0; }
         header p { margin: 0; opacity: 0.8; font-size: 0.9em; }
@@ -251,6 +270,51 @@
         .v-score-val { font-size: 2em; font-weight: bold; }
         .winner-highlight { color: #f1c40f; }
 
+        /* Rules Modal Styling */
+        .rule-modal {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 200;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+
+        .rule-content {
+            background: white;
+            color: #333;
+            width: 90%;
+            max-width: 600px;
+            max-height: 85vh;
+            border-radius: 10px;
+            padding: 25px;
+            position: relative;
+            overflow-y: auto;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+        }
+
+        .close-rules {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 30px;
+            font-weight: bold;
+            color: #888;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .close-rules:hover { color: #333; }
+
+        .rule-content h2 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #f1c40f; padding-bottom: 5px;}
+        .rule-content h3 { color: #e67e22; margin-bottom: 5px; }
+        .rule-content ul { padding-left: 20px; }
+        .rule-content li { margin-bottom: 5px; }
+        .card-count-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .card-count-table th, .card-count-table td { border: 1px solid #ddd; padding: 5px; text-align: center; font-size: 0.9em; }
+        .card-count-table th { background-color: #f1f1f1; }
+
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
             10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
@@ -272,6 +336,7 @@
 </head>
 <body>
 
+<button class="rule-btn" id="ruleBtn" onclick="game.toggleRules()">规则 / Rules</button>
 <button class="lang-btn" id="langToggle" onclick="game.toggleLanguage()">English</button>
 
 <header>
@@ -354,6 +419,14 @@
     <button id="btnRestartModal" style="width: 200px; background-color: #f1c40f; color: black;" onclick="game.initGame()">再来一局</button>
 </div>
 
+<div class="rule-modal" id="ruleModal">
+    <div class="rule-content">
+        <span class="close-rules" onclick="game.toggleRules()">&times;</span>
+        <h2 id="rule-header">游戏规则</h2>
+        <div id="rule-body"></div>
+    </div>
+</div>
+
 <script>
     const TEXTS = {
         zh: {
@@ -393,7 +466,36 @@
             card_def: "保命",
             card_bon: "加分",
             card_mul: "乘倍",
-            lang_btn: "English"
+            lang_btn: "English",
+            btn_rule: "规则 (Rules)",
+            rule_header: "游戏规则",
+            rule_body: `
+                <h3>游戏目标</h3>
+                <p>率先达到 <strong>200分</strong> 的玩家获胜。如果两人在同一轮都超过200分，分数更高者获胜。</p>
+                
+                <h3>回合流程</h3>
+                <ul>
+                    <li>玩家轮流进行回合。轮到你时，你可以选择 <strong>翻牌 (Hit)</strong> 或 <strong>收手 (Bank)</strong>。</li>
+                    <li><strong>翻牌</strong>: 抽取一张牌。如果是新数字，加入手牌并累积临时分数。</li>
+                    <li><strong>收手</strong>: 将当前手牌的临时分数（含加成）存入总分，结束本轮行动。</li>
+                </ul>
+
+                <h3>爆牌 (Bust)</h3>
+                <p>如果你翻出的数字牌 <strong>已经在你手中存在</strong>，你爆牌了！本轮得分为 0，强制结束行动。</p>
+
+                <h3>特殊奖励: Flip 7</h3>
+                <p>如果你集齐了 <strong>7种不同的数字</strong>，你获得 <strong>+15分</strong> 额外奖励，并自动收手。</p>
+
+                <h3>卡牌种类与数量</h3>
+                <table class="card-count-table">
+                    <tr><th>卡牌类型</th><th>功能</th><th>数量</th></tr>
+                    <tr><td>数字牌 (1-12)</td><td>获得对应点数。但不能重复。</td><td>数字几就有几张<br>(如: 12有12张)</td></tr>
+                    <tr><td>攻击 (Attack)</td><td>强制对手下回合必须连翻3张牌，不能收手。</td><td>4 张</td></tr>
+                    <tr><td>保命 (2nd Chance)</td><td>抵消一次爆牌（自动消耗）。</td><td>3 张</td></tr>
+                    <tr><td>加分 (+10 Bonus)</td><td>结算时额外 +10 分。</td><td>3 张</td></tr>
+                    <tr><td>乘倍 (x2 Multiplier)</td><td>结算时总分翻倍。</td><td>2 张</td></tr>
+                </table>
+            `
         },
         en: {
             title: "Flip 7: Race to 200",
@@ -432,7 +534,36 @@
             card_def: "SAFE",
             card_bon: "BON",
             card_mul: "MUL",
-            lang_btn: "中文"
+            lang_btn: "中文",
+            btn_rule: "规则 (Rules)",
+            rule_header: "Game Rules",
+            rule_body: `
+                <h3>Objective</h3>
+                <p>First player to reach <strong>200 points</strong> wins. If both pass 200 in the same round, the higher score wins.</p>
+                
+                <h3>Turn Sequence</h3>
+                <ul>
+                    <li>Players take turns. On your turn, choose to <strong>Hit</strong> (Flip) or <strong>Bank</strong>.</li>
+                    <li><strong>Hit</strong>: Draw a card. If it's a unique number, add it to your hand and build score.</li>
+                    <li><strong>Bank</strong>: Save your current score (with bonuses) to your Total, ending your round.</li>
+                </ul>
+
+                <h3>Busting</h3>
+                <p>If you flip a Number Card that you <strong>already have</strong> in your hand, you BUST! You get 0 points for this round.</p>
+
+                <h3>Flip 7 Bonus</h3>
+                <p>If you collect <strong>7 unique numbers</strong>, you get a <strong>+15 Point Bonus</strong> and automatically Bank.</p>
+
+                <h3>Card Types & Counts</h3>
+                <table class="card-count-table">
+                    <tr><th>Type</th><th>Effect</th><th>Count</th></tr>
+                    <tr><td>Number (1-12)</td><td>Points equal to value. Must be unique.</td><td>Count matches Value<br>(e.g., twelve 12s)</td></tr>
+                    <tr><td>Attack</td><td>Force opponent to flip 3 cards next turn.</td><td>4 Cards</td></tr>
+                    <tr><td>2nd Chance</td><td>Consumable. Blocks one Bust card.</td><td>3 Cards</td></tr>
+                    <tr><td>+10 Bonus</td><td>Adds 10 points to score if banked.</td><td>3 Cards</td></tr>
+                    <tr><td>x2 Multiplier</td><td>Doubles score if banked.</td><td>2 Cards</td></tr>
+                </table>
+            `
         }
     };
 
@@ -488,6 +619,16 @@
             this.refreshOverlays();
             this.updateUI(); 
         }
+        
+        // Show/Hide Rules Modal
+        toggleRules() {
+            const modal = document.getElementById('ruleModal');
+            if (modal.style.display === 'flex') {
+                modal.style.display = 'none';
+            } else {
+                modal.style.display = 'flex';
+            }
+        }
 
         updateStaticTexts() {
             document.getElementById('txt-title').innerText = this.t('title');
@@ -498,6 +639,9 @@
             document.getElementById('txt-deck').innerText = this.t('deck');
             document.getElementById('btnRestart').innerText = this.t('btn_restart');
             document.getElementById('btnRestartModal').innerText = this.t('btn_restart');
+            document.getElementById('ruleBtn').innerText = this.t('btn_rule');
+            document.getElementById('rule-header').innerText = this.t('rule_header');
+            document.getElementById('rule-body').innerHTML = this.t('rule_body');
             
             document.getElementById('p1-badge-turn').innerText = this.t('your_turn');
             document.getElementById('p2-badge-turn').innerText = this.t('your_turn');
