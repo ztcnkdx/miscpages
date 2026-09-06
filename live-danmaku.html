@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live wall</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="fontlink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --void:#0B1220;
+  --surface:#172234;
+  --edge:#25344B;
+  --ink:#E8EEF6;
+  --muted:#8095AE;
+  --ask:#FFC94A;
+  --say:#6FD3C9;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--void);color:var(--ink);font-family:var(--sans);
+  font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--ask);outline-offset:2px}
+a{color:var(--say)}
+.hidden{display:none !important}
+
+/* ---------- shared top bar ---------- */
+.bar{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--edge)}
+.bar h1{margin:0;font-size:16px;font-weight:600;letter-spacing:-.01em}
+.code{font-family:var(--mono);font-size:15px;color:var(--ask);letter-spacing:.08em}
+.dot{width:8px;height:8px;border-radius:50%;background:#4A5B72;flex:none;transition:background .3s}
+.dot.on{background:var(--say);box-shadow:0 0 0 4px rgba(111,211,201,.14)}
+.spacer{flex:1}
+.ghost{padding:7px 13px;border:1px solid var(--edge);border-radius:7px;font-size:14px;color:var(--muted)}
+.ghost:hover{color:var(--ink);border-color:#3B506E}
+.ghost.armed{color:var(--void);background:var(--ask);border-color:var(--ask);font-weight:600}
+
+/* ---------- gate ---------- */
+#gate{max-width:440px;margin:0 auto;padding:64px 24px}
+#gate h2{font-size:26px;font-weight:600;margin:0 0 8px;letter-spacing:-.02em}
+#gate p{color:var(--muted);margin:0 0 28px}
+.field{display:block;width:100%;padding:13px 15px;background:var(--surface);border:1px solid var(--edge);
+  border-radius:9px;color:var(--ink);font-family:var(--mono);font-size:17px;letter-spacing:.12em}
+.solid{display:block;width:100%;margin-top:12px;padding:14px;background:var(--ask);color:#0B1220;
+  border-radius:9px;font-weight:600;font-size:15px}
+.solid:hover{filter:brightness(1.08)}
+.orline{margin:26px 0 14px;color:var(--muted);font-size:14px}
+
+/* ---------- poster ---------- */
+#post{max-width:560px;margin:0 auto;padding:26px 20px 40px}
+.lanes{display:flex;flex-direction:column;gap:2px;margin-bottom:20px}
+.lane{display:flex;align-items:baseline;gap:14px;width:100%;text-align:left;padding:13px 15px;
+  border-radius:8px;background:transparent;position:relative}
+.lane::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:2px;background:var(--edge)}
+.lane span{color:var(--muted);font-size:14px}
+.lane b{font-weight:500;color:var(--muted)}
+.lane[aria-pressed="true"]{background:var(--surface)}
+.lane[aria-pressed="true"] b{color:var(--ink)}
+.lane[data-k="q"][aria-pressed="true"]::before{background:var(--ask)}
+.lane[data-k="c"][aria-pressed="true"]::before{background:var(--say)}
+#msg{width:100%;min-height:132px;resize:vertical;padding:16px;background:var(--surface);
+  border:1px solid var(--edge);border-radius:11px;color:var(--ink);font-family:var(--sans);font-size:18px}
+#msg::placeholder{color:#5C708C}
+.row{display:flex;align-items:center;gap:14px;margin-top:12px}
+#count{font-family:var(--mono);font-size:13px;color:var(--muted)}
+#send{padding:13px 28px;background:var(--ask);color:#0B1220;border-radius:9px;font-weight:600}
+#send:disabled{background:var(--edge);color:var(--muted);cursor:not-allowed}
+#mine{margin-top:34px;border-top:1px solid var(--edge);padding-top:18px}
+#mine h3{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 12px}
+#mine li{list-style:none;padding:9px 0 9px 13px;border-left:2px solid var(--edge);margin-bottom:8px;
+  font-size:15px;color:var(--muted);word-break:break-word}
+#mine ul{margin:0;padding:0}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(120%);
+  background:var(--say);color:#08131C;padding:11px 20px;border-radius:999px;font-weight:600;font-size:14px;
+  transition:transform .28s cubic-bezier(.2,.9,.3,1)}
+#toast.up{transform:translateX(-50%) translateY(0)}
+
+/* ---------- host ---------- */
+#host{display:flex;flex-direction:column;height:100%}
+#share{display:flex;flex-wrap:wrap;gap:24px;align-items:center;padding:20px;border-bottom:1px solid var(--edge)}
+#qr{width:116px;height:116px;border-radius:8px;background:#fff;padding:5px;flex:none}
+#share .txt{min-width:240px;flex:1}
+#share .txt p{margin:0 0 6px;color:var(--muted);font-size:14px}
+#link{font-family:var(--mono);font-size:15px;color:var(--ink);word-break:break-all}
+#warn{color:var(--ask);font-size:14px;margin-top:8px}
+#float{padding:13px 22px;background:var(--ask);color:#0B1220;border-radius:9px;font-weight:600}
+#float:disabled{background:var(--surface);color:var(--muted);cursor:not-allowed}
+
+#holder{flex:1;min-height:180px;position:relative;background:#080D16}
+#wall{position:absolute;inset:0;display:flex}
+#badge{flex:none;display:flex;align-items:center;gap:14px;padding:12px 16px;border-right:1px solid var(--edge)}
+#badge img{height:calc(100% - 24px);max-height:130px;width:auto;aspect-ratio:1;flex:none;
+  border-radius:8px;background:#fff;padding:5px}
+#badge .qcode{font-family:var(--mono);font-size:23px;line-height:1.2;letter-spacing:.14em;color:var(--ask)}
+#badge .qhint{font-size:12px;color:var(--muted);max-width:142px;margin-top:6px;line-height:1.35}
+#stage{position:relative;flex:1;overflow:hidden}
+#empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#40536E;font-size:15px;text-align:center;padding:20px}
+#parked{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#40536E;font-size:15px}
+.shot{position:absolute;left:0;white-space:nowrap;font-weight:500;will-change:transform;
+  text-shadow:0 2px 10px rgba(0,0,0,.9);padding-right:4px}
+.shot.q{color:var(--ask)}
+.shot.c{color:var(--ink)}
+@media (max-width:560px){ #badge{padding:10px} #badge .qtext{display:none} }
+
+#panel{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:12px 20px;border-top:1px solid var(--edge)}
+#panel label{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
+#panel input[type=range]{width:110px;accent-color:var(--ask)}
+
+#log{max-height:34vh;overflow:auto;border-top:1px solid var(--edge);padding:6px 20px 20px}
+#log .ent{display:flex;gap:13px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #1B2637}
+#log time{font-family:var(--mono);font-size:12px;color:#5C708C;flex:none;padding-top:3px}
+#log .body{flex:1;word-break:break-word;font-size:15px}
+#log .ent.q .body{color:var(--ask)}
+#log .air{flex:none;font-size:12px;padding:5px 11px;border:1px solid var(--edge);border-radius:6px;color:var(--muted)}
+#log .air:hover{color:var(--ink);border-color:#3B506E}
+
+@media (max-width:640px){ #share{gap:16px} #qr{width:88px;height:88px} }
+@media (prefers-reduced-motion:reduce){ #toast{transition:none} }
+</style>
+</head>
+<body>
+
+<!-- ============ GATE ============ -->
+<section id="gate" class="hidden">
+  <h2>Live wall</h2>
+  <p>Anonymous questions and comments, scrolling across the screen.</p>
+  <input id="joincode" class="field" placeholder="ROOM CODE" autocapitalize="characters" autocomplete="off" spellcheck="false">
+  <button id="joinbtn" class="solid">Join a room</button>
+  <div class="orline">Want to run one?</div>
+  <button id="hostbtn" class="ghost" style="width:100%;padding:13px">Open a new room</button>
+</section>
+
+<!-- ============ POSTER ============ -->
+<section id="post" class="hidden">
+  <div class="bar" style="padding-left:0;padding-right:0;margin-bottom:22px">
+    <span class="dot" id="sdot"></span>
+    <span class="code" id="scode"></span>
+    <span class="spacer"></span>
+    <span style="font-size:13px;color:var(--muted)">No name is sent</span>
+  </div>
+
+  <div class="lanes">
+    <button class="lane" data-k="q" aria-pressed="true"><b>Ask a question</b><span>goes up in amber</span></button>
+    <button class="lane" data-k="c" aria-pressed="false"><b>Say something</b><span>a reaction or an answer</span></button>
+  </div>
+
+  <textarea id="msg" maxlength="180" placeholder="Type here. Press Enter to send."></textarea>
+  <div class="row">
+    <span id="count">180</span>
+    <span class="spacer"></span>
+    <button id="send">Send</button>
+  </div>
+
+  <div id="mine" class="hidden">
+    <h3>Sent from this device</h3>
+    <ul id="minelist"></ul>
+  </div>
+</section>
+
+<!-- ============ HOST ============ -->
+<section id="host" class="hidden">
+  <div class="bar">
+    <span class="dot" id="tdot"></span>
+    <h1>Live wall</h1>
+    <span class="code" id="tcode"></span>
+    <span class="spacer"></span>
+    <button id="review" class="ghost" aria-pressed="false">Approve before airing</button>
+    <button id="clear" class="ghost">Clear screen</button>
+  </div>
+
+  <div id="share">
+    <img id="qr" alt="">
+    <div class="txt">
+      <p>Anyone with this link can post:</p>
+      <div id="link"></div>
+      <div id="warn" class="hidden">This file is open from your hard drive, so that link won't work for anyone else. Put it on a web address first.</div>
+    </div>
+    <button id="float">Float on top</button>
+  </div>
+
+  <div id="holder">
+    <div id="wall">
+      <aside id="badge">
+        <img id="qr2" alt="">
+        <div class="qtext">
+          <div class="qcode"></div>
+          <div class="qhint">Scan to join, or enter this room code.</div>
+        </div>
+      </aside>
+      <div id="stage">
+        <div id="empty">Waiting for the first message.</div>
+      </div>
+    </div>
+    <div id="parked" class="hidden">The wall is in the floating window.</div>
+  </div>
+
+  <div id="panel">
+    <label>Speed <input id="speed" type="range" min="40" max="320" value="120"></label>
+    <label>Size <input id="size" type="range" min="16" max="72" value="30"></label>
+    <label>Lane gap <input id="gap" type="range" min="10" max="220" value="60"></label>
+    <span class="spacer"></span>
+    <button id="showcode" class="ghost">Hide join code</button>
+    <button id="pause" class="ghost" aria-pressed="false">Pause</button>
+    <button id="copy" class="ghost">Copy all messages</button>
+  </div>
+
+  <div id="log"></div>
+</section>
+
+<div id="toast">Sent</div>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script>
+/* ============================================================
+   CONFIG
+
+   Out of the box this uses HiveMQ's free public broker. It works
+   with no signup, but anyone who guesses your room code could read
+   or post. Room codes are random six characters, so for most uses
+   that's fine.
+
+   For a private relay: make a free cluster at hivemq.cloud, then
+   fill in BROKER / USER / PASS below. The free tier covers 100 devices.
+   ============================================================ */
+const BROKER = 'wss://broker.hivemq.com:8884/mqtt';
+const USER   = '';
+const PASS   = '';
+const PREFIX = 'livewall';      // change this to something of your own
+const LIMIT  = 180;             // characters per message
+const COOLDOWN = 4000;          // ms a sender must wait between sends
+/* ========================================================== */
+
+const $ = s => document.querySelector(s);
+const params = new URLSearchParams(location.search);
+let room = (params.get('r') || '').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,10);
+const isHost = params.get('t') === '1';
+let client = null, kind = 'q', lastSend = 0;
+const seen = new Set();
+
+const newCode = () => {
+  const a = 'abcdefghjkmnpqrstuvwxyz23456789';
+  return Array.from({length:6}, () => a[Math.floor(Math.random()*a.length)]).join('');
+};
+
+/* routing runs at the very bottom, after class Wall is defined */
+
+/* ---------- transport ---------- */
+function connect(onMsg, dot) {
+  const topic = `${PREFIX}/${room}`;
+  const opts = { clientId: 'lw_' + Math.random().toString(16).slice(2,10), clean:true, reconnectPeriod:2500, connectTimeout:8000 };
+  if (USER) { opts.username = USER; opts.password = PASS; }
+  if (typeof mqtt === 'undefined') { alert('The messaging library did not load. Check the internet connection on this device.'); return; }
+  client = mqtt.connect(BROKER, opts);
+  client.on('connect', () => { dot.classList.add('on'); client.subscribe(topic); });
+  client.on('reconnect', () => dot.classList.remove('on'));
+  client.on('close',     () => dot.classList.remove('on'));
+  client.on('message', (t, buf) => {
+    let m; try { m = JSON.parse(buf.toString()); } catch { return; }
+    if (!m || !m.x || seen.has(m.id)) return;
+    seen.add(m.id);
+    onMsg(m);
+  });
+  return topic;
+}
+
+/* ============================================================
+   POSTER
+   ============================================================ */
+function startPoster() {
+  $('#post').classList.remove('hidden');
+  $('#scode').textContent = room;
+  const topic = connect(() => {}, $('#sdot'));
+
+  document.querySelectorAll('.lane').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.lane').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    kind = b.dataset.k;
+    $('#msg').focus();
+  });
+
+  const box = $('#msg');
+  box.addEventListener('input', () => { $('#count').textContent = LIMIT - box.value.length; });
+  box.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); fire(); }
+  });
+  $('#send').onclick = fire;
+
+  function fire() {
+    const text = box.value.replace(/\s+/g,' ').trim();
+    if (!text) return;
+    const wait = COOLDOWN - (Date.now() - lastSend);
+    if (wait > 0) { toast(`Wait ${Math.ceil(wait/1000)}s`); return; }
+    if (!client || !client.connected) { toast('Not connected yet'); return; }
+    const m = { id: Math.random().toString(36).slice(2), t: kind, x: text.slice(0,LIMIT), ts: Date.now() };
+    client.publish(topic, JSON.stringify(m));
+    lastSend = Date.now();
+    box.value = ''; $('#count').textContent = LIMIT;
+    remember(text);
+    toast('Sent');
+    $('#send').disabled = true;
+    setTimeout(() => { $('#send').disabled = false; }, COOLDOWN);
+  }
+
+  function remember(text) {
+    $('#mine').classList.remove('hidden');
+    const li = document.createElement('li');
+    li.textContent = text;
+    $('#minelist').prepend(li);
+    while ($('#minelist').children.length > 5) $('#minelist').lastElementChild.remove();
+  }
+}
+
+let toastTimer;
+function toast(t) {
+  const el = $('#toast');
+  el.textContent = t; el.classList.add('up');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('up'), 1600);
+}
+
+/* ============================================================
+   HOST
+   ============================================================ */
+function startHost() {
+  $('#host').classList.remove('hidden');
+  $('#tcode').textContent = room;
+
+  const url = location.origin + location.pathname + '?r=' + room;
+  $('#link').textContent = url;
+  if (location.protocol === 'file:') $('#warn').classList.remove('hidden');
+  const qsrc = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=6&bgcolor=FFFFFF&color=0B1220&data=' + encodeURIComponent(url);
+  ['#qr', '#qr2'].forEach(sel => {
+    const im = $(sel);
+    im.src = qsrc;
+    im.alt = 'QR code linking to ' + url;
+    im.onerror = () => im.remove();
+  });
+  $('#badge .qcode').textContent = room;
+
+  const wall = new Wall($('#stage'));
+  let review = false;
+
+  connect(m => {
+    logIt(m, review);
+    if (!review) wall.push(m);
+  }, $('#tdot'));
+
+  $('#speed').oninput = e => wall.speed = +e.target.value;
+  $('#size').oninput  = e => { wall.size = +e.target.value; wall.layout(); };
+  $('#gap').oninput   = e => wall.gap = +e.target.value;
+
+  $('#pause').onclick = e => {
+    const on = e.currentTarget.getAttribute('aria-pressed') !== 'true';
+    e.currentTarget.setAttribute('aria-pressed', String(on));
+    e.currentTarget.classList.toggle('armed', on);
+    e.currentTarget.textContent = on ? 'Resume' : 'Pause';
+    wall.setPaused(on);
+  };
+  $('#review').onclick = e => {
+    review = e.currentTarget.getAttribute('aria-pressed') !== 'true';
+    e.currentTarget.setAttribute('aria-pressed', String(review));
+    e.currentTarget.classList.toggle('armed', review);
+  };
+  $('#clear').onclick = () => wall.clear();
+  $('#showcode').onclick = e => {
+    const hidden = $('#badge').classList.toggle('hidden');
+    e.currentTarget.textContent = hidden ? 'Show join code' : 'Hide join code';
+    wall.layout();
+  };
+  $('#copy').onclick = () => {
+    const lines = [...document.querySelectorAll('#log .ent')]
+      .map(e => e.querySelector('time').textContent + '  ' + e.querySelector('.body').textContent)
+      .reverse().join('\n');
+    navigator.clipboard.writeText(lines).then(() => toast('Copied'), () => toast('Copy blocked'));
+  };
+
+  function logIt(m, pending) {
+    $('#empty').classList.add('hidden');
+    const row = document.createElement('div');
+    row.className = 'ent ' + m.t;
+    const d = new Date(m.ts || Date.now());
+    row.innerHTML = '<time></time><div class="body"></div>';
+    row.querySelector('time').textContent =
+      String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    row.querySelector('.body').textContent = m.x;
+    const btn = document.createElement('button');
+    btn.className = 'air';
+    btn.textContent = pending ? 'Air it' : 'Replay';
+    btn.onclick = () => { wall.push(m); btn.textContent = 'Replay'; };
+    row.append(btn);
+    $('#log').prepend(row);
+    while ($('#log').children.length > 300) $('#log').lastElementChild.remove();
+  }
+
+  /* ---------- picture-in-picture overlay ---------- */
+  const fl = $('#float');
+  if (!('documentPictureInPicture' in window)) {
+    fl.disabled = true;
+    fl.textContent = 'Floating needs Chrome or Edge';
+  } else {
+    fl.onclick = async () => {
+      const pip = await documentPictureInPicture.requestWindow({ width: 980, height: 240 });
+      document.querySelectorAll('style').forEach(s => pip.document.head.append(s.cloneNode(true)));
+      const f = $('#fontlink'); if (f) pip.document.head.append(f.cloneNode(true));
+      const b = pip.document.body;
+      b.style.cssText = 'margin:0;background:#080D16;overflow:hidden;height:100%';
+      pip.document.documentElement.style.height = '100%';
+      wall.clear();
+      b.append($('#wall'));
+      $('#parked').classList.remove('hidden');
+      wall.attach(pip);
+      fl.textContent = 'Floating';
+      fl.disabled = true;
+      pip.addEventListener('pagehide', () => {
+        wall.clear();
+        $('#holder').prepend($('#wall'));
+        $('#parked').classList.add('hidden');
+        wall.attach(window);
+        fl.textContent = 'Float on top';
+        fl.disabled = false;
+      });
+    };
+  }
+}
+
+/* ============================================================
+   DANMAKU ENGINE
+   ============================================================ */
+class Wall {
+  constructor(el) {
+    this.el = el;
+    this.speed = 120;      // px per second
+    this.size = 30;        // px
+    this.gap = 60;         // px between a message's tail and the next in its lane
+    this.paused = false;
+    this.queue = [];
+    this.live = new Set();
+    this.lanes = [];
+    this.win = window;
+    this.ro = new ResizeObserver(() => this.layout());
+    this.ro.observe(el);
+    this.layout();
+  }
+  attach(win) { this.win = win; this.layout(); }
+  layout() {
+    const h = this.el.clientHeight || 300;
+    const laneH = Math.max(this.size * 1.5, 24);
+    const n = Math.max(1, Math.floor(h / laneH));
+    const prev = this.lanes;
+    this.lanes = Array.from({ length: n }, (_, i) => prev[i] || { freeAt: 0 });
+    this.laneH = h / n;
+  }
+  setPaused(p) {
+    this.paused = p;
+    this.live.forEach(a => p ? a.pause() : a.play());
+    if (!p) this.drain();
+  }
+  clear() {
+    this.live.forEach(a => a.cancel());
+    this.live.clear();
+    this.el.textContent = '';
+    this.queue = [];
+    this.lanes.forEach(l => l.freeAt = 0);
+  }
+  push(m) { this.queue.push(m); this.drain(); }
+  drain() {
+    if (this.paused) return;
+    while (this.queue.length) {
+      const i = this.freeLane();
+      if (i < 0) {
+        if (!this.timer) this.timer = setTimeout(() => { this.timer = null; this.drain(); }, 220);
+        return;
+      }
+      this.shoot(this.queue.shift(), i);
+    }
+  }
+  freeLane() {
+    const now = performance.now();
+    let best = -1, bt = Infinity;
+    this.lanes.forEach((l, i) => { if (l.freeAt <= now && l.freeAt < bt) { bt = l.freeAt; best = i; } });
+    return best;
+  }
+  shoot(m, i) {
+    const W = this.el.clientWidth;
+    const doc = this.el.ownerDocument;
+    const d = doc.createElement('div');
+    d.className = 'shot ' + (m.t === 'q' ? 'q' : 'c');
+    d.textContent = m.x;
+    d.style.fontSize = this.size + 'px';
+    d.style.lineHeight = this.laneH + 'px';
+    d.style.top = (i * this.laneH) + 'px';
+    d.style.transform = `translateX(${W}px)`;
+    this.el.append(d);
+
+    const w = d.offsetWidth;
+    const dur = ((W + w) / this.speed) * 1000;
+    this.lanes[i].freeAt = performance.now() + ((w + this.gap) / this.speed) * 1000;
+
+    const a = d.animate(
+      [{ transform: `translateX(${W}px)` }, { transform: `translateX(${-w}px)` }],
+      { duration: dur, easing: 'linear' }
+    );
+    this.live.add(a);
+    if (this.paused) a.pause();
+    a.onfinish = a.oncancel = () => { this.live.delete(a); d.remove(); };
+  }
+}
+
+/* ============================================================
+   ROUTING — must stay last: startHost() constructs Wall
+   ============================================================ */
+if (!room) {
+  $('#gate').classList.remove('hidden');
+  $('#joinbtn').onclick = () => {
+    const c = $('#joincode').value.toLowerCase().replace(/[^a-z0-9]/g,'');
+    if (c) location.search = '?r=' + c;
+  };
+  $('#joincode').addEventListener('keydown', e => { if (e.key === 'Enter') $('#joinbtn').click(); });
+  $('#hostbtn').onclick = () => { location.search = '?r=' + newCode() + '&t=1'; };
+} else if (isHost) {
+  startHost();
+} else {
+  startPoster();
+}
+</script>
+</body>
+</html>
