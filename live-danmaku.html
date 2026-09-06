@@ -263,10 +263,14 @@ function connect(onMsg, dot) {
   client.on('reconnect', () => dot.classList.remove('on'));
   client.on('close',     () => dot.classList.remove('on'));
   client.on('message', (t, buf) => {
-    let m; try { m = JSON.parse(buf.toString()); } catch { return; }
+    let m;
+    try { m = JSON.parse(buf.toString()); } catch { return; }
     if (!m || !m.x || seen.has(m.id)) return;
     seen.add(m.id);
-    onMsg(m);
+    // mqtt.js stops processing packets entirely if a message listener
+    // throws, so a display error must never escape this callback.
+    try { onMsg(m); }
+    catch (err) { console.error('live-wall: could not display a message', err); }
   });
   return topic;
 }
@@ -332,6 +336,11 @@ function startHost() {
   $('#host').classList.remove('hidden');
   $('#tcode').textContent = room;
 
+  // These nodes move into the picture-in-picture document when floating.
+  // Once they do, document.querySelector on this page cannot find them,
+  // so hold the references rather than looking them up again later.
+  const wallEl = $('#wall'), badgeEl = $('#badge'), emptyEl = $('#empty');
+
   const url = location.origin + location.pathname + '?r=' + room;
   $('#link').textContent = url;
   if (location.protocol === 'file:') $('#warn').classList.remove('hidden');
@@ -342,7 +351,7 @@ function startHost() {
     im.alt = 'QR code linking to ' + url;
     im.onerror = () => im.remove();
   });
-  $('#badge .qcode').textContent = room;
+  badgeEl.querySelector('.qcode').textContent = room;
 
   const wall = new Wall($('#stage'));
   let review = false;
@@ -370,7 +379,7 @@ function startHost() {
   };
   $('#clear').onclick = () => wall.clear();
   $('#showcode').onclick = e => {
-    const hidden = $('#badge').classList.toggle('hidden');
+    const hidden = badgeEl.classList.toggle('hidden');
     e.currentTarget.textContent = hidden ? 'Show join code' : 'Hide join code';
     wall.layout();
   };
@@ -382,7 +391,7 @@ function startHost() {
   };
 
   function logIt(m, pending) {
-    $('#empty').classList.add('hidden');
+    emptyEl.classList.add('hidden');
     const row = document.createElement('div');
     row.className = 'ent ' + m.t;
     const d = new Date(m.ts || Date.now());
@@ -413,14 +422,14 @@ function startHost() {
       b.style.cssText = 'margin:0;background:#080D16;overflow:hidden;height:100%';
       pip.document.documentElement.style.height = '100%';
       wall.clear();
-      b.append($('#wall'));
+      b.append(wallEl);
       $('#parked').classList.remove('hidden');
       wall.attach(pip);
       fl.textContent = 'Floating';
       fl.disabled = true;
       pip.addEventListener('pagehide', () => {
         wall.clear();
-        $('#holder').prepend($('#wall'));
+        $('#holder').prepend(wallEl);
         $('#parked').classList.add('hidden');
         wall.attach(window);
         fl.textContent = 'Float on top';
@@ -448,7 +457,13 @@ class Wall {
     this.ro.observe(el);
     this.layout();
   }
-  attach(win) { this.win = win; this.layout(); }
+  attach(win) {
+    this.win = win;
+    this.layout();
+    // The stage has not been laid out in its new document yet, so its
+    // width reads 0 on this tick. Measure again once it has.
+    if (win.requestAnimationFrame) win.requestAnimationFrame(() => this.layout());
+  }
   layout() {
     const h = this.el.clientHeight || 300;
     const laneH = Math.max(this.size * 1.5, 24);
