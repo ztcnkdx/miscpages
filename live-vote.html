@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live vote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --void:#0B1220;
+  --surface:#172234;
+  --raised:#1D2A3F;
+  --edge:#25344B;
+  --line:#3B506E;
+  --track:#121A28;
+  --ink:#E8EEF6;
+  --muted:#8095AE;
+  --faint:#5C708C;
+  --ask:#FFC94A;
+  --say:#6FD3C9;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  background:var(--void);color:var(--ink);font-family:var(--sans);
+  font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px);
+}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:disabled{cursor:not-allowed}
+:focus-visible{outline:2px solid var(--ask);outline-offset:2px}
+a{color:var(--say)}
+.hidden{display:none !important}
+.spacer{flex:1}
+
+#fatal{background:var(--ask);color:var(--void);padding:12px 20px;font-weight:500;font-size:15px}
+
+/* ---------- shared bits ---------- */
+.bar{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--edge)}
+.bar h1{margin:0;font-size:16px;font-weight:600;letter-spacing:-.01em}
+.bar.flush{padding-left:0;padding-right:0}
+.code{font-family:var(--mono);font-size:15px;color:var(--ask);letter-spacing:.08em}
+.dot{width:8px;height:8px;border-radius:50%;background:#4A5B72;flex:none;transition:background .3s}
+.dot.on{background:var(--say);box-shadow:0 0 0 4px rgba(111,211,201,.14)}
+.note{font-size:13px;color:var(--muted)}
+.ghost{padding:8px 14px;border:1px solid var(--edge);border-radius:7px;font-size:14px;color:var(--muted)}
+.ghost:hover{color:var(--ink);border-color:var(--line)}
+.solid{padding:14px 22px;background:var(--ask);color:var(--void);border-radius:9px;font-weight:600;font-size:15px}
+.solid:hover{filter:brightness(1.08)}
+.solid:disabled{background:var(--edge);color:var(--muted);filter:none}
+.wide{display:block;width:100%}
+.field{display:block;width:100%;padding:13px 15px;background:var(--surface);border:1px solid var(--edge);
+  border-radius:9px;color:var(--ink);font-family:var(--sans);font-size:17px}
+.field::placeholder{color:var(--faint)}
+.field.codein{font-family:var(--mono);letter-spacing:.12em}
+textarea.field{resize:vertical;line-height:1.45;min-height:150px}
+
+/* ---------- results bars (voter, host, projector) ---------- */
+.results{display:flex;flex-direction:column;gap:16px}
+.rhead{display:flex;align-items:baseline;gap:12px;margin-bottom:7px}
+.rname{flex:1;min-width:0;word-break:break-word;line-height:1.3}
+.rnum{flex:none;font-family:var(--mono);font-size:15px}
+.rpct{flex:none;min-width:3.4em;text-align:right;font-family:var(--mono);font-size:13px;color:var(--muted)}
+.track{height:10px;border-radius:5px;background:var(--track);overflow:hidden}
+.fill{height:100%;width:0;border-radius:5px;background:var(--line);transition:width .6s cubic-bezier(.2,.9,.3,1)}
+.res.mine .fill{background:var(--say)}
+.res.lead .fill{background:var(--ask)}
+.res.lead .rname{font-weight:600}
+.tag{display:inline-block;margin-left:10px;padding:0 8px;border:1px solid rgba(111,211,201,.45);border-radius:999px;
+  font-size:12px;font-weight:500;line-height:20px;color:var(--say);white-space:nowrap;vertical-align:2px}
+.big{gap:20px}
+.big .rname{font-size:18px}
+.big .rnum{font-size:17px}
+.big .track{height:16px;border-radius:8px}
+.big .fill{border-radius:8px}
+
+/* ---------- gate ---------- */
+#gate{max-width:440px;margin:0 auto;padding:64px 24px}
+#gate h2{font-size:26px;font-weight:600;margin:0 0 8px;letter-spacing:-.02em}
+#gate > p{color:var(--muted);margin:0 0 28px}
+#gate .solid{margin-top:12px}
+.orline{margin:26px 0 14px;color:var(--muted);font-size:14px}
+#hostbtn{padding:13px}
+#myrooms{margin-top:36px;border-top:1px solid var(--edge);padding-top:18px}
+#myrooms h3{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 6px}
+#myrooms ul{list-style:none;margin:0;padding:0}
+#myrooms a{display:flex;gap:14px;align-items:baseline;padding:10px 0;border-bottom:1px solid #1B2637;color:var(--ink);text-decoration:none}
+#myrooms a:hover .rt{color:var(--ink)}
+#myrooms .code{font-size:13px}
+#myrooms .rt{flex:1;min-width:0;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- voter ---------- */
+#vote{max-width:600px;margin:0 auto;padding:0 20px}
+.state{padding:48px 0;color:var(--muted)}
+.question{font-size:24px;line-height:1.25;font-weight:600;letter-spacing:-.015em;margin:26px 0 6px;word-break:break-word}
+.hint{color:var(--muted);margin:0 0 18px;font-size:15px}
+.items{display:flex;flex-direction:column;gap:8px}
+.item{display:flex;align-items:center;gap:14px;width:100%;min-height:58px;padding:14px 16px;text-align:left;
+  background:var(--surface);border:1px solid var(--edge);border-radius:10px;font-size:17px;line-height:1.35}
+.item .itxt{flex:1;min-width:0;word-break:break-word}
+.item .mark{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center}
+.item.multi .mark{border-radius:6px}
+.item[aria-pressed="true"]{background:var(--raised);border-color:var(--ask)}
+.item[aria-pressed="true"] .mark{background:var(--ask);border-color:var(--ask)}
+.item[aria-pressed="true"] .mark::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--void)}
+.item.multi[aria-pressed="true"] .mark::after{width:6px;height:11px;border-radius:0;background:none;
+  border:solid var(--void);border-width:0 2.5px 2.5px 0;transform:translate(0,-1px) rotate(45deg)}
+.submitbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;margin-top:18px;
+  padding:14px 0 calc(16px + env(safe-area-inset-bottom,0px));background:var(--void);border-top:1px solid var(--edge)}
+.selcount{font-size:14px;color:var(--muted)}
+.status{margin:0 0 24px;color:var(--say);font-weight:500}
+.status.wait{color:var(--muted)}
+.status.warn{color:var(--ask)}
+.quiet{color:var(--muted);padding:6px 0}
+.total{margin:20px 0 0;font-size:14px;color:var(--muted)}
+.after{display:flex;flex-wrap:wrap;gap:10px;margin:28px 0 calc(40px + env(safe-area-inset-bottom,0px))}
+
+/* ---------- host ---------- */
+#host{min-height:100vh;display:flex;flex-direction:column}
+#setup{max-width:600px;width:100%;margin:0 auto;padding:30px 20px 60px}
+#setup h2{font-size:22px;margin:0 0 4px;font-weight:600;letter-spacing:-.015em}
+.lbl{display:block;font-size:14px;color:var(--muted);margin:22px 0 8px}
+.modes{border:0;padding:0;margin:22px 0 0;display:flex;flex-direction:column;gap:10px}
+.modes legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:10px}
+.radio,.check{display:flex;align-items:center;gap:10px;font-size:15px;cursor:pointer}
+.radio input,.check input{accent-color:var(--ask);width:18px;height:18px;margin:0;flex:none}
+.num{width:64px;padding:5px 8px;background:var(--surface);border:1px solid var(--edge);border-radius:6px;
+  color:var(--ink);font-family:var(--mono);font-size:15px}
+.check{margin-top:24px}
+#swarn{margin:22px 0 0;font-size:14px;color:var(--muted)}
+.err{color:var(--ask);font-size:14px;min-height:1.5em;margin:16px 0 6px}
+.formrow{display:flex;gap:10px;align-items:center}
+
+#live{flex:1;display:grid;grid-template-columns:280px minmax(0,1fr)}
+#share{border-right:1px solid var(--edge);padding:26px 20px}
+#qr{display:block;width:100%;max-width:240px;aspect-ratio:1;background:#fff;border-radius:10px;padding:8px}
+.sharetext{margin-top:16px}
+.sharetext .qcode{font-family:var(--mono);font-size:26px;line-height:1.2;letter-spacing:.14em;color:var(--ask)}
+.sharetext p{margin:10px 0 4px;color:var(--muted);font-size:14px}
+#link{font-family:var(--mono);font-size:13px;word-break:break-all}
+#warn{margin-top:10px;color:var(--ask);font-size:13px}
+#board{width:100%;max-width:920px;padding:28px 32px 48px}
+#hq{margin:0;font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-.02em;word-break:break-word}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 28px;font-size:14px;color:var(--muted)}
+.state-pill{display:inline-flex;align-items:center;gap:8px;color:var(--say);font-weight:500}
+.state-pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.state-pill.closed{color:var(--ask)}
+#controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:34px;padding-top:20px;border-top:1px solid var(--edge)}
+@media (max-width:760px){
+  #live{grid-template-columns:minmax(0,1fr)}
+  #share{display:flex;gap:16px;align-items:center;border-right:0;border-bottom:1px solid var(--edge);padding:18px 20px}
+  #qr{width:112px;flex:none}
+  .sharetext{margin-top:0;min-width:0}
+  #board{padding:22px 20px 40px}
+  #hq{font-size:22px}
+}
+
+/* ---------- projector view ---------- */
+#present{position:fixed;inset:0;z-index:40;background:var(--void);overflow:auto;
+  display:grid;grid-template-columns:auto minmax(0,1fr);gap:5vw;align-items:center;padding:7vh 5vw}
+#present.noqr{grid-template-columns:minmax(0,1fr)}
+#present.noqr .pqr{display:none}
+.pqr{display:flex;flex-direction:column;align-items:center;gap:14px}
+.pqr img{width:min(42vh,30vw);aspect-ratio:1;background:#fff;border-radius:14px;padding:12px}
+.pcode{font-family:var(--mono);font-size:clamp(26px,3.6vw,52px);line-height:1;letter-spacing:.14em;color:var(--ask)}
+.phint{color:var(--muted);font-size:clamp(14px,1.4vw,20px)}
+.plink{max-width:min(42vh,30vw);font-family:var(--mono);font-size:clamp(12px,1.1vw,17px);color:var(--muted);text-align:center;word-break:break-all}
+.pboard{width:100%;max-width:1100px;justify-self:center}
+#pq{margin:0 0 4.5vh;font-size:clamp(26px,3.4vw,52px);line-height:1.15;font-weight:600;letter-spacing:-.02em;word-break:break-word}
+.huge{gap:2.6vh}
+.huge .rhead{margin-bottom:1vh}
+.huge .rname{font-size:clamp(17px,2vw,32px)}
+.huge .rnum{font-size:clamp(17px,1.9vw,30px)}
+.huge .rpct{font-size:clamp(13px,1.3vw,20px)}
+.huge .track{height:clamp(14px,2.6vh,30px);border-radius:999px}
+.huge .fill{border-radius:999px}
+#ptotal{margin:3.5vh 0 0;color:var(--muted);font-size:clamp(14px,1.4vw,22px)}
+.pctl{position:fixed;top:14px;right:16px;z-index:41;display:flex;gap:8px;opacity:.5}
+.pctl:hover,.pctl:focus-within{opacity:1}
+@media (max-width:700px){ #present{grid-template-columns:minmax(0,1fr)} .pqr img{width:52vw} }
+
+#toast{position:fixed;left:50%;top:0;z-index:60;
+  transform:translate(-50%,-110%);background:var(--say);color:#08131C;padding:10px 20px;border-radius:999px;
+  font-weight:600;font-size:14px;white-space:nowrap;transition:transform .28s cubic-bezier(.2,.9,.3,1)}
+#toast.up{transform:translate(-50%,calc(14px + env(safe-area-inset-top,0px)))}
+
+@media (prefers-reduced-motion:reduce){ .fill,#toast,.dot{transition:none} }
+</style>
+</head>
+<body>
+
+<div id="fatal" class="hidden" role="alert"></div>
+
+<!-- ============ GATE ============ -->
+<section id="gate" class="hidden">
+  <h2>Live vote</h2>
+  <p>Anonymous voting. Results update on every screen as votes come in.</p>
+  <input id="joincode" class="field codein" placeholder="Room code" autocapitalize="none" autocomplete="off" spellcheck="false" aria-label="Room code">
+  <button id="joinbtn" class="solid wide">Join a room</button>
+  <div class="orline">Want to run one?</div>
+  <button id="hostbtn" class="ghost wide">Open a new room</button>
+  <div id="myrooms" class="hidden">
+    <h3>Rooms you run on this device</h3>
+    <ul></ul>
+  </div>
+</section>
+
+<!-- ============ VOTER ============ -->
+<section id="vote" class="hidden">
+  <div class="bar flush">
+    <span class="dot" id="vdot"></span>
+    <span class="code" id="vcode"></span>
+    <span class="spacer"></span>
+    <span class="note">No name is sent</span>
+  </div>
+
+  <div id="vwait" class="state">Connecting…</div>
+
+  <div id="vballot" class="hidden">
+    <h2 id="vq" class="question"></h2>
+    <p id="vhint" class="hint"></p>
+    <div id="vitems" class="items"></div>
+    <div class="submitbar">
+      <span id="vsel" class="selcount"></span>
+      <span class="spacer"></span>
+      <button id="vkeep" class="ghost hidden">Keep my vote</button>
+      <button id="vsubmit" class="solid" disabled>Submit vote</button>
+    </div>
+  </div>
+
+  <div id="vdone" class="hidden">
+    <h2 id="vq2" class="question"></h2>
+    <p id="vstatus" class="status" aria-live="polite"></p>
+    <div id="vresults" class="results"></div>
+    <p id="vquiet" class="quiet hidden"></p>
+    <p id="vtotal" class="total"></p>
+    <div class="after">
+      <button id="vresend" class="solid hidden">Send again</button>
+      <button id="vchange" class="ghost hidden">Change my vote</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HOST ============ -->
+<section id="host" class="hidden">
+  <div class="bar">
+    <span class="dot" id="hdot"></span>
+    <h1>Live vote</h1>
+    <span class="code" id="hcode"></span>
+    <span class="spacer"></span>
+    <button id="hpresent" class="ghost hidden">Present</button>
+  </div>
+
+  <div id="setup" class="hidden">
+    <h2 id="stitle">Set up the vote</h2>
+    <label class="lbl" for="sq">Question</label>
+    <input id="sq" class="field" maxlength="200" placeholder="Which project should win best in show?">
+    <label class="lbl" for="sitems">Items, one per line</label>
+    <textarea id="sitems" class="field" rows="6" placeholder="Team 1&#10;Team 2&#10;Team 3"></textarea>
+    <fieldset class="modes">
+      <legend>Each person can</legend>
+      <label class="radio"><input type="radio" name="mode" id="sone" checked> Pick one item</label>
+      <label class="radio"><input type="radio" name="mode" id="smulti"> Pick up to
+        <input id="smax" class="num" type="number" min="2" max="30" value="2" aria-label="Most items each person can pick"> items</label>
+    </fieldset>
+    <label class="check"><input type="checkbox" id="sreveal" checked> Voters see the results after they vote</label>
+    <p id="swarn" class="hidden">Starting a new question clears the current tally from this screen. Earlier questions stay in the CSV download.</p>
+    <p id="serr" class="err" role="alert"></p>
+    <div class="formrow">
+      <button id="sgo" class="solid">Start voting</button>
+      <button id="scancel" class="ghost hidden">Cancel</button>
+    </div>
+  </div>
+
+  <div id="live" class="hidden">
+    <aside id="share">
+      <img id="qr" alt="">
+      <div class="sharetext">
+        <div class="qcode"></div>
+        <p>Scan the code, or open:</p>
+        <div id="link"></div>
+        <div id="warn" class="hidden">This file is open from your hard drive, so that link won't work for anyone else. Put it on a web address first.</div>
+      </div>
+    </aside>
+    <main id="board">
+      <h2 id="hq"></h2>
+      <div class="meta">
+        <span id="hstate" class="state-pill"></span>
+        <span id="hmode"></span>
+        <span id="hseen"></span>
+      </div>
+      <div id="hresults" class="results big"></div>
+      <p id="htotal" class="total"></p>
+      <div id="controls">
+        <button id="hclose" class="ghost"></button>
+        <button id="hreveal" class="ghost"></button>
+        <button id="hnew" class="ghost">New question</button>
+        <button id="hcsv" class="ghost">Download CSV</button>
+      </div>
+    </main>
+  </div>
+</section>
+
+<!-- ============ PROJECTOR ============ -->
+<div id="present" class="hidden">
+  <div class="pctl">
+    <button id="pqrtoggle" class="ghost">Hide QR code</button>
+    <button id="pexit" class="ghost">Exit</button>
+  </div>
+  <div class="pqr">
+    <img id="pqrimg" alt="">
+    <div class="pcode"></div>
+    <div class="phint">Scan to vote, or go to</div>
+    <div class="plink" id="plink"></div>
+  </div>
+  <div class="pboard">
+    <h2 id="pq"></h2>
+    <div id="presults" class="results huge"></div>
+    <p id="ptotal"></p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+<script>
+/* ============================================================
+   CONFIG
+
+   Same relay as live-danmaku.html: HiveMQ's free public broker.
+   No signup, but it is public, so someone who knew the room code
+   and the topic names below could read the tally or send forged
+   votes. Room codes are random six characters.
+
+   To use your own relay: make a free cluster at hivemq.cloud,
+   then fill in BROKER / USER / PASS below.
+
+   How the vote works: the host's screen keeps the tally. Each
+   phone sends its picks with a random token (so a phone has one
+   ballot it can change); the token is not tied to a name and the
+   host screen never displays it. The host publishes the counts,
+   and phones that have voted show them.
+   ============================================================ */
+const BROKER = 'wss://broker.hivemq.com:8884/mqtt';
+const USER   = '';
+const PASS   = '';
+const PREFIX = 'livevote';      // change this to something of your own
+const MAX_ITEMS = 30;
+const ITEM_LEN  = 120;          // characters per item
+/* ========================================================== */
+
+const $ = s => document.querySelector(s);
+const params = new URLSearchParams(location.search);
+const room = (params.get('r') || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10);
+const wantsHost = params.get('t') === '1';
+
+const base = `${PREFIX}/${room}`;
+const T = {
+  poll: base + '/poll',       // retained, from host: the question and its items
+  res:  base + '/results',    // retained, from host: the counts
+  vote: base + '/vote',       // from phones
+  sync: base + '/sync',       // from phones: "send me the current state"
+  ack:  tk => base + '/ack/' + tk
+};
+const HOST_KEY = r => 'lv_host_' + r;
+const TOKEN_RE = /^[a-z0-9]{8,32}$/;
+
+const store = {
+  get(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
+};
+
+function rid(n, a = 'abcdefghjkmnpqrstuvwxyz23456789') {
+  const v = new Uint32Array(n);
+  crypto.getRandomValues(v);
+  return Array.from(v, x => a[x % a.length]).join('');
+}
+const clean  = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
+const people = n => n === 0 ? 'No votes yet' : n === 1 ? '1 person voted' : `${n} people voted`;
+const same   = (a, b) => {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  const x = [...a].sort((p, q) => p - q), y = [...b].sort((p, q) => p - q);
+  return x.every((v, i) => v === y[i]);
+};
+const qrSrc  = (url, px) => `https://api.qrserver.com/v1/create-qr-code/?size=${px}x${px}&margin=6&bgcolor=FFFFFF&color=0B1220&data=${encodeURIComponent(url)}`;
+
+let toastTimer;
+function toast(t) {
+  const el = $('#toast');
+  el.textContent = t; el.classList.add('up');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('up'), 1700);
+}
+function fatal(msg) { const el = $('#fatal'); el.textContent = msg; el.classList.remove('hidden'); }
+
+/* ---------- transport ---------- */
+function connect(dot, topics, onMsg, onReady) {
+  if (typeof mqtt === 'undefined') {
+    fatal("The messaging library didn't load. Check this device's internet connection, then reload.");
+    return null;
+  }
+  const opts = { clientId: 'lv_' + rid(10, '0123456789abcdef'), clean: true, reconnectPeriod: 2500, connectTimeout: 8000 };
+  if (USER) { opts.username = USER; opts.password = PASS; }
+  const c = mqtt.connect(BROKER, opts);
+  c.on('connect', () => {
+    dot.classList.add('on');
+    c.subscribe(topics, { qos: 1 }, err => {
+      if (err || !onReady) return;
+      try { onReady(); } catch (e) { console.error('live-vote:', e); }
+    });
+  });
+  c.on('reconnect', () => dot.classList.remove('on'));
+  c.on('close',     () => dot.classList.remove('on'));
+  c.on('message', (t, buf) => {
+    let m;
+    try { m = JSON.parse(buf.toString()); } catch { return; }
+    if (!m || typeof m !== 'object') return;
+    // mqtt.js stops processing packets if a message listener throws.
+    try { onMsg(t, m); } catch (e) { console.error('live-vote: could not handle a message', e); }
+  });
+  return c;
+}
+
+function okPoll(m) {
+  return typeof m.rd === 'string' && typeof m.title === 'string' &&
+    Array.isArray(m.items) && m.items.length >= 2 && m.items.length <= MAX_ITEMS &&
+    m.items.every(x => typeof x === 'string') &&
+    (m.mode === 'one' || m.mode === 'multi') && Number.isInteger(m.max) && m.max >= 1 &&
+    typeof m.open === 'boolean' && typeof m.reveal === 'boolean';
+}
+
+/* ---------- result bars, shared by every view ---------- */
+function renderBars(el, poll, counts, n, mine) {
+  if (el.dataset.rd !== poll.rd) {
+    el.textContent = '';
+    poll.items.forEach(txt => {
+      const row = document.createElement('div');
+      row.className = 'res';
+      row.innerHTML = '<div class="rhead"><span class="rname"></span><span class="rnum"></span><span class="rpct"></span></div>' +
+                      '<div class="track"><div class="fill"></div></div>';
+      row.querySelector('.rname').textContent = txt;
+      el.append(row);
+    });
+    el.dataset.rd = poll.rd;
+  }
+  const top = Math.max(0, ...counts);
+  [...el.children].forEach((row, i) => {
+    const c = counts[i] || 0;
+    row.querySelector('.rnum').textContent = c;
+    row.querySelector('.rpct').textContent = (n ? Math.round(100 * c / n) : 0) + '%';
+    row.querySelector('.fill').style.width = (n ? 100 * c / n : 0) + '%';
+    row.classList.toggle('lead', top > 0 && c === top);
+    const name = row.querySelector('.rname');
+    let tag = name.querySelector('.tag');
+    const isMine = !!mine && mine.includes(i);
+    row.classList.toggle('mine', isMine);
+    if (isMine && !tag) {
+      tag = document.createElement('span');
+      tag.className = 'tag'; tag.textContent = 'Your pick';
+      name.append(tag);
+    } else if (!isMine && tag) tag.remove();
+  });
+}
+
+/* ============================================================
+   GATE
+   ============================================================ */
+function startGate() {
+  $('#gate').classList.remove('hidden');
+  const join = () => {
+    const c = $('#joincode').value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (c) location.search = '?r=' + c;
+  };
+  $('#joinbtn').onclick = join;
+  $('#joincode').addEventListener('keydown', e => { if (e.key === 'Enter') join(); });
+  $('#hostbtn').onclick = () => {
+    const r = rid(6);
+    if (!store.set(HOST_KEY(r), { created: Date.now(), poll: null, ballots: {}, history: [] })) {
+      fatal("This browser isn't letting the page save anything, so it can't run a room. Turn off private browsing and try again.");
+      return;
+    }
+    location.search = '?r=' + r + '&t=1';
+  };
+
+  const mineRooms = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('lv_host_')) continue;
+      const v = store.get(k);
+      if (v) mineRooms.push({ r: k.slice(8), title: v.poll ? v.poll.title : 'No question yet', ts: v.created || 0 });
+    }
+  } catch {}
+  if (mineRooms.length) {
+    const ul = $('#myrooms ul');
+    mineRooms.sort((a, b) => b.ts - a.ts).slice(0, 6).forEach(x => {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = '?r=' + encodeURIComponent(x.r) + '&t=1';
+      a.innerHTML = '<span class="code"></span><span class="rt"></span>';
+      a.querySelector('.code').textContent = x.r;
+      a.querySelector('.rt').textContent = x.title;
+      li.append(a); ul.append(li);
+    });
+    $('#myrooms').classList.remove('hidden');
+  }
+}
+
+/* ============================================================
+   VOTER
+   ============================================================ */
+function startVoter() {
+  $('#vote').classList.remove('hidden');
+  $('#vcode').textContent = room;
+
+  let tk = store.get('lv_tok_' + room);
+  if (typeof tk !== 'string' || !TOKEN_RE.test(tk)) { tk = rid(16); store.set('lv_tok_' + room, tk); }
+  const mineKey = rd => `lv_mine_${room}_${rd}`;
+
+  let poll = null, res = null, early = null;
+  let mine = null;          // { p: [indices], ok: host confirmed }
+  let sel = [], editing = false, builtFor = '';
+  let tries = 0, gaveUp = false, timer = null;
+
+  const client = connect($('#vdot'), [T.poll, T.res, T.ack(tk)], onMsg, () => {
+    client.publish(T.sync, '{"s":1}');
+    if (poll && mine && !mine.ok && poll.open) send(true);
+  });
+
+  const slow = setTimeout(() => {
+    if (!poll) $('#vwait').textContent = "Waiting for the host to start the vote. Keep this page open.";
+  }, 5000);
+
+  function onMsg(t, m) {
+    if (t === T.poll) {
+      if (!okPoll(m)) return;
+      const fresh = !poll || poll.rd !== m.rd;
+      poll = m;
+      if (fresh) {
+        res = early && early.rd === m.rd ? early : null;
+        early = null;
+        mine = store.get(mineKey(m.rd));
+        if (!mine || !Array.isArray(mine.p)) mine = null;
+        sel = mine ? mine.p.slice() : [];
+        editing = false; builtFor = ''; gaveUp = false;
+        clearTimeout(timer);
+        if (mine && !mine.ok && poll.open) send(true);
+      }
+      render();
+    } else if (t === T.res) {
+      if (typeof m.rd !== 'string') return;
+      if (!poll || m.rd !== poll.rd) { early = m; return; }
+      res = m;
+      render();
+    } else if (t === T.ack(tk)) {
+      if (!poll || !mine || m.rd !== poll.rd || !same(m.p, mine.p) || mine.ok) return;
+      mine.ok = true;
+      store.set(mineKey(poll.rd), mine);
+      clearTimeout(timer); gaveUp = false;
+      render();
+      toast('Vote counted');
+    }
+  }
+
+  function send(reset) {
+    if (reset) { tries = 0; gaveUp = false; }
+    clearTimeout(timer);
+    if (client && client.connected) client.publish(T.vote, JSON.stringify({ rd: poll.rd, tk, p: mine.p }), { qos: 1 });
+    tries++;
+    const wait = 2500 + tries * 1000;
+    timer = setTimeout(() => {
+      if (!mine || mine.ok) return;
+      if (tries < 6) send(false); else { gaveUp = true; render(); }
+    }, wait);
+  }
+
+  function render() {
+    if (!poll) return;
+    clearTimeout(slow);
+    $('#vwait').classList.add('hidden');
+    const ballot = poll.open && (!mine || editing);
+    $('#vballot').classList.toggle('hidden', !ballot);
+    $('#vdone').classList.toggle('hidden', ballot);
+    if (ballot) drawBallot(); else drawDone();
+  }
+
+  function drawBallot() {
+    const multi = poll.mode === 'multi';
+    const key = poll.rd + (editing ? ':edit' : '');
+    if (builtFor !== key) {
+      builtFor = key;
+      $('#vq').textContent = poll.title;
+      $('#vhint').textContent = multi ? `Pick up to ${poll.max}.` : 'Pick one.';
+      const box = $('#vitems');
+      box.textContent = '';
+      poll.items.forEach((txt, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'item' + (multi ? ' multi' : '');
+        b.innerHTML = '<span class="mark" aria-hidden="true"></span><span class="itxt"></span>';
+        b.querySelector('.itxt').textContent = txt;
+        b.onclick = () => pick(i);
+        box.append(b);
+      });
+      $('#vsubmit').textContent = editing ? 'Update vote' : 'Submit vote';
+      $('#vkeep').classList.toggle('hidden', !editing);
+    }
+    [...$('#vitems').children].forEach((b, i) => b.setAttribute('aria-pressed', String(sel.includes(i))));
+    $('#vsubmit').disabled = sel.length === 0;
+    $('#vsel').textContent = multi ? `${sel.length} of ${poll.max} picked` : '';
+  }
+
+  function pick(i) {
+    if (poll.mode === 'multi') {
+      if (sel.includes(i)) sel = sel.filter(x => x !== i);
+      else if (sel.length >= poll.max) { toast(`You can pick up to ${poll.max}`); return; }
+      else sel = [...sel, i];
+    } else sel = [i];
+    drawBallot();
+  }
+
+  function drawDone() {
+    $('#vq2').textContent = poll.title;
+    const st = $('#vstatus');
+    let text, cls = 'status';
+    if (mine && mine.ok)       text = poll.open ? 'Your vote is counted.' : 'Your vote is counted. Voting is closed.';
+    else if (mine && !poll.open) { text = 'Voting closed before your vote was confirmed.'; cls += ' warn'; }
+    else if (mine && gaveUp)   { text = "The host's screen hasn't confirmed your vote."; cls += ' warn'; }
+    else if (mine)             { text = 'Sending your vote…'; cls += ' wait'; }
+    else                       { text = 'Voting is closed.'; cls += ' wait'; }
+    st.textContent = text; st.className = cls;
+
+    $('#vresend').classList.toggle('hidden', !(mine && !mine.ok && gaveUp && poll.open));
+    $('#vchange').classList.toggle('hidden', !(mine && poll.open));
+
+    const showRes = poll.reveal && res && Array.isArray(res.c);
+    $('#vresults').classList.toggle('hidden', !showRes);
+    if (showRes) renderBars($('#vresults'), poll, res.c, res.n || 0, mine ? mine.p : null);
+    const q = $('#vquiet');
+    if (!poll.reveal)  { q.textContent = 'The host is keeping the results hidden for now.'; q.classList.remove('hidden'); }
+    else if (!showRes) { q.textContent = 'Results will show here in a moment.'; q.classList.remove('hidden'); }
+    else q.classList.add('hidden');
+    $('#vtotal').textContent = res && typeof res.n === 'number' ? people(res.n) : '';
+  }
+
+  $('#vsubmit').onclick = () => {
+    if (!poll || !poll.open || !sel.length) return;
+    mine = { p: sel.slice().sort((a, b) => a - b), ok: false };
+    store.set(mineKey(poll.rd), mine);
+    editing = false;
+    send(true);
+    render();
+    window.scrollTo(0, 0);
+  };
+  $('#vchange').onclick = () => {
+    if (!poll || !poll.open) return;
+    editing = true; builtFor = '';
+    sel = mine ? mine.p.slice() : [];
+    render();
+    window.scrollTo(0, 0);
+  };
+  $('#vkeep').onclick = () => { editing = false; sel = mine ? mine.p.slice() : []; render(); };
+  $('#vresend').onclick = () => { send(true); render(); };
+}
+
+/* ============================================================
+   HOST
+   ============================================================ */
+function startHost() {
+  $('#host').classList.remove('hidden');
+  $('#hcode').textContent = room;
+  const key = HOST_KEY(room);
+  const st = Object.assign({ created: Date.now(), poll: null, ballots: {}, history: [] }, store.get(key) || {});
+  const save = () => store.set(key, st);
+  let setupOpen = !st.poll, presenting = false;
+  let resTimer = null, syncAt = 0, syncTimer = null;
+
+  const url = location.origin + location.pathname + '?r=' + room;
+  $('#link').textContent = url;
+  $('#plink').textContent = url.replace(/^https?:\/\//, '');
+  if (location.protocol === 'file:') $('#warn').classList.remove('hidden');
+  [['#qr', 400], ['#pqrimg', 800]].forEach(([sel, px]) => {
+    const im = $(sel);
+    im.src = qrSrc(url, px);
+    im.alt = 'QR code linking to ' + url;
+    im.onerror = () => { im.style.visibility = 'hidden'; };
+  });
+  document.querySelectorAll('.qcode, .pcode').forEach(el => el.textContent = room);
+
+  const client = connect($('#hdot'), [T.vote, T.sync], onMsg, publishAll);
+
+  function tally() {
+    const c = st.poll.items.map(() => 0);
+    let n = 0;
+    for (const picks of Object.values(st.ballots)) {
+      n++;
+      picks.forEach(i => { if (i < c.length) c[i]++; });
+    }
+    return { c, n };
+  }
+  function pub(topic, obj, retain) {
+    if (client && client.connected) client.publish(topic, JSON.stringify(obj), { qos: 1, retain: !!retain });
+  }
+  function publishAll() {
+    if (!st.poll) return;
+    pub(T.poll, st.poll, true);
+    pushResults(true);
+  }
+  function pushResults(now) {
+    const go = () => {
+      resTimer = null;
+      if (!st.poll) return;
+      const r = tally();
+      pub(T.res, { rd: st.poll.rd, n: r.n, c: st.poll.reveal ? r.c : null }, true);
+    };
+    if (now) { clearTimeout(resTimer); go(); }
+    else if (!resTimer) resTimer = setTimeout(go, 300);
+  }
+
+  function onMsg(t, m) {
+    if (t === T.sync) {
+      const wait = 1500 - (Date.now() - syncAt);
+      if (wait <= 0) { syncAt = Date.now(); publishAll(); }
+      else if (!syncTimer) syncTimer = setTimeout(() => { syncTimer = null; syncAt = Date.now(); publishAll(); }, wait);
+      return;
+    }
+    if (t !== T.vote) return;
+    const p = st.poll;
+    if (!p || !p.open || m.rd !== p.rd) return;
+    if (typeof m.tk !== 'string' || !TOKEN_RE.test(m.tk) || !Array.isArray(m.p)) return;
+    const picks = [...new Set(m.p)].filter(i => Number.isInteger(i) && i >= 0 && i < p.items.length).sort((a, b) => a - b);
+    if (picks.length < 1 || picks.length > p.max || picks.length !== m.p.length) return;
+    st.ballots[m.tk] = picks;
+    save();
+    pub(T.ack(m.tk), { rd: p.rd, p: picks }, false);
+    pushResults(false);
+    draw();
+  }
+
+  function draw() {
+    const p = st.poll;
+    $('#setup').classList.toggle('hidden', !setupOpen);
+    $('#live').classList.toggle('hidden', setupOpen || !p);
+    $('#hpresent').classList.toggle('hidden', setupOpen || !p);
+    if (!p || setupOpen) return;
+    const r = tally();
+    $('#hq').textContent = p.title;
+    const s = $('#hstate');
+    s.textContent = p.open ? 'Voting open' : 'Voting closed';
+    s.classList.toggle('closed', !p.open);
+    $('#hmode').textContent = p.mode === 'multi' ? `Pick up to ${p.max}` : 'Pick one';
+    $('#hseen').textContent = p.reveal ? 'Voters see results after voting' : 'Results hidden from voters';
+    $('#hclose').textContent = p.open ? 'Close voting' : 'Reopen voting';
+    $('#hreveal').textContent = p.reveal ? 'Hide results from voters' : 'Show results to voters';
+    renderBars($('#hresults'), p, r.c, r.n, null);
+    $('#htotal').textContent = people(r.n);
+    if (presenting) {
+      $('#pq').textContent = p.title;
+      renderBars($('#presults'), p, r.c, r.n, null);
+      $('#ptotal').textContent = people(r.n);
+    }
+  }
+
+  /* ---------- setup ---------- */
+  function openSetup(from) {
+    setupOpen = true;
+    $('#stitle').textContent = st.poll ? 'New question' : 'Set up the vote';
+    $('#sq').value = from ? from.title : '';
+    $('#sitems').value = from ? from.items.join('\n') : '';
+    const multi = !!from && from.mode === 'multi';
+    $('#sone').checked = !multi;
+    $('#smulti').checked = multi;
+    $('#smax').value = multi ? from.max : 2;
+    $('#sreveal').checked = from ? from.reveal : true;
+    $('#serr').textContent = '';
+    $('#scancel').classList.toggle('hidden', !st.poll);
+    $('#swarn').classList.toggle('hidden', !(st.poll && Object.keys(st.ballots).length));
+    draw();
+    $('#sq').focus();
+  }
+  function archive() {
+    if (!st.poll) return;
+    const r = tally();
+    if (!r.n) return;
+    st.history.push({ title: st.poll.title, items: st.poll.items, c: r.c, n: r.n, at: Date.now() });
+    if (st.history.length > 50) st.history.shift();
+  }
+  $('#smax').addEventListener('focus', () => { $('#smulti').checked = true; });
+  $('#sgo').onclick = () => {
+    const err = msg => { $('#serr').textContent = msg; };
+    const title = clean($('#sq').value, 200);
+    const items = [...new Set($('#sitems').value.split('\n').map(s => clean(s, ITEM_LEN)).filter(Boolean))];
+    if (!title) return err('Type the question people are voting on.');
+    if (items.length < 2) return err('Add at least two items, one per line.');
+    if (items.length > MAX_ITEMS) return err(`Keep it to ${MAX_ITEMS} items or fewer.`);
+    const multi = $('#smulti').checked;
+    let max = parseInt($('#smax').value, 10);
+    if (multi && !(max >= 2)) return err('Set how many items each person can pick, 2 or more.');
+    max = multi ? Math.min(max, items.length) : 1;
+    archive();
+    st.poll = { v: 1, rd: rid(8), title, items, mode: multi ? 'multi' : 'one', max, open: true, reveal: $('#sreveal').checked };
+    st.ballots = {};
+    save();
+    setupOpen = false;
+    publishAll();
+    draw();
+    toast('Voting started');
+  };
+  $('#scancel').onclick = () => { setupOpen = false; draw(); };
+
+  /* ---------- controls ---------- */
+  $('#hclose').onclick = () => {
+    st.poll.open = !st.poll.open;
+    save(); publishAll(); draw();
+    toast(st.poll.open ? 'Voting reopened' : 'Voting closed');
+  };
+  $('#hreveal').onclick = () => {
+    st.poll.reveal = !st.poll.reveal;
+    save(); publishAll(); draw();
+    toast(st.poll.reveal ? 'Results shown to voters' : 'Results hidden from voters');
+  };
+  $('#hnew').onclick = () => openSetup(st.poll);
+  $('#hcsv').onclick = () => {
+    const rows = [['question', 'item', 'votes', 'percent_of_voters', 'voters']];
+    const add = (title, items, c, n) => items.forEach((it, i) =>
+      rows.push([title, it, c[i] || 0, n ? (100 * (c[i] || 0) / n).toFixed(1) : '0.0', n]));
+    st.history.forEach(h => add(h.title, h.items, h.c, h.n));
+    if (st.poll) { const r = tally(); add(st.poll.title, st.poll.items, r.c, r.n); }
+    const esc = v => { const s = String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const csv = '\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `live-vote-${room}.csv`;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
+  /* ---------- projector view ---------- */
+  const pres = $('#present');
+  const openPresent = () => {
+    presenting = true;
+    pres.classList.remove('hidden');
+    draw();
+    if (pres.requestFullscreen) pres.requestFullscreen().catch(() => {});
+  };
+  const closePresent = () => {
+    presenting = false;
+    pres.classList.add('hidden');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  };
+  $('#hpresent').onclick = openPresent;
+  $('#pexit').onclick = closePresent;
+  $('#pqrtoggle').onclick = e => {
+    const off = pres.classList.toggle('noqr');
+    e.currentTarget.textContent = off ? 'Show QR code' : 'Hide QR code';
+  };
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && presenting && !document.fullscreenElement) closePresent();
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && presenting) closePresent();
+  });
+
+  if (setupOpen) openSetup(null); else draw();
+}
+
+/* ============================================================
+   ROUTING
+   Host controls open only on the device that created the room,
+   so editing the link to add &t=1 gives a phone the voter view.
+   ============================================================ */
+if (!room) startGate();
+else if (wantsHost && store.get(HOST_KEY(room))) startHost();
+else startVoter();
+</script>
+</body>
+</html>
